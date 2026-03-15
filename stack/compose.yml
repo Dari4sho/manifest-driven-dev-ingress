@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./api
+    env_file:
+      - ./api/.env
+    environment:
+      DEV_SLUG: ${DEV_SLUG}
+      PORT: ${API_PORT:-8000}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: app
+      DB_USER: app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+      - dev-ingress
+
+  frontend:
+    build:
+      context: ./frontend
+    env_file:
+      - ./frontend/.env
+    environment:
+      DEV_SLUG: ${DEV_SLUG}
+      API_BASE_URL: ${API_BASE_URL}
+      VITE_API_BASE_URL: ${API_BASE_URL}
+      FRONTEND_PORT: ${FRONTEND_PORT:-3000}
+    depends_on:
+      - api
+    networks:
+      - default
+      - dev-ingress
+
+networks:
+  dev-ingress:
+    external: true
+    name: dev-ingress
+
+volumes:
+  pgdata:
