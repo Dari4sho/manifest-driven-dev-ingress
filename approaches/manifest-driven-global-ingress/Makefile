@@ -1,4 +1,4 @@
-.PHONY: ingress-up ingress-down ingress-status stacks
+.PHONY: ingress-up ingress-down ingress-status stacks test
 
 ingress-up:
 	./bin/ingressctl ingress up
@@ -11,3 +11,6 @@ ingress-status:
 
 stacks:
 	./bin/ingressctl stack ls
+
+test:
+	npm test

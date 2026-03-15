@@ -4,6 +4,7 @@ This approach has two clearly separated layers:
 
 - Core ingress tooling at this level (`bin/ingressctl`, `infra/traefik`, `.ingressctl`).
 - Optional demo under `demo/` (dummy stack + sample manifest + helper scripts).
+- `bin/ingressctl` is a thin CLI wrapper; implementation lives in `bin/ingressctl-lib.mjs`.
 
 ## Core only
 
@@ -56,6 +57,16 @@ Notes:
 - `env` supports `{slug}`, `{project}`, `{name}`, `{http_port}`, `{https_port}`, `{http_port_suffix}`, `{https_port_suffix}`, `{route.<name>.host}`, `{route.<name>.url}`.
 - `compose_service + port` resolves to `http://<project>-<service>-1:<port>`.
 - `service.url` supports direct HTTP targets outside compose.
+
+## Tests
+
+Run from this directory:
+
+```bash
+npm test
+# or
+make test
+```
 
 ## Demo
 
