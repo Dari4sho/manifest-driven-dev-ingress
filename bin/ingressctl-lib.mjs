@@ -34,6 +34,9 @@ export function run(cmd, args, opts = {}) {
   if ((res.status ?? 1) !== 0) process.exit(res.status ?? 1);
 }
 
+// Run a command and capture stdout for probe/check style flows.
+// Returns trimmed stdout on success; returns an empty string on non-zero exit
+// or spawn errors so callers can treat it as a simple truthy/falsy existence check.
 export function capture(cmd, args, opts = {}) {
   debug('capture', cmd, args.join(' '), 'cwd=', opts.cwd ?? ROOT_DIR);
   const res = spawnSync(cmd, args, {
@@ -94,14 +97,14 @@ export function deriveSlug(baseDir) {
   return slug;
 }
 
+// Lightweight template expansion used across manifest fields.
 export function tpl(str, vars) {
-  // Lightweight template expansion used across manifest fields.
   return String(str).replace(/\{slug\}/g, vars.slug).replace(/\{project\}/g, vars.project).replace(/\{name\}/g, vars.name ?? '');
 }
 
+// Optional manifest.env allows project-specific runtime values without hardcoding
+// app assumptions into ingressctl.
 export function renderManifestEnv(cfg, ports) {
-  // Optional manifest.env allows project-specific runtime values without hardcoding
-  // app assumptions into ingressctl.
   const routeByName = Object.fromEntries(cfg.routes.map((r) => [r.name, r]));
   const vars = {
     slug: cfg.slug,
@@ -224,8 +227,8 @@ export function buildRouteConfigYaml(cfg) {
   return y;
 }
 
+// File-provider config consumed by the shared Traefik instance.
 export function writeRouteFile(cfg) {
-  // File-provider config consumed by the shared Traefik instance.
   fs.mkdirSync(DYNAMIC_DIR, { recursive: true });
   const file = path.join(DYNAMIC_DIR, `${cfg.project}.yml`);
   const y = buildRouteConfigYaml(cfg);
@@ -233,8 +236,8 @@ export function writeRouteFile(cfg) {
   return file;
 }
 
+// Local bookkeeping so stacks can be listed and inspected.
 export function writeState(cfg, routeFile) {
-  // Local bookkeeping so stacks can be listed and inspected.
   fs.mkdirSync(STATE_DIR, { recursive: true });
   const sf = path.join(STATE_DIR, `${cfg.project}.json`);
   fs.writeFileSync(sf, JSON.stringify({
@@ -272,6 +275,8 @@ export function cmdIngress(action) {
     if (!fs.existsSync(dashboard)) {
       fs.writeFileSync(dashboard, "http:\n  routers:\n    traefik-dashboard:\n      rule: 'Host(`traefik.localhost`)'\n      entryPoints:\n        - web\n      service: api@internal\n", 'utf8');
     }
+    // Ensure the shared ingress network exists: inspect returns output when present,
+    // and an empty string on failure/missing network, so create it only when needed.
     if (!capture('docker', ['network', 'inspect', 'dev-ingress'], { env })) {
       run('docker', ['network', 'create', 'dev-ingress'], { env });
     }
