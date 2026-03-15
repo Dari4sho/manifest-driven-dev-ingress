@@ -57,6 +57,7 @@ Notes:
 - `env` supports `{slug}`, `{project}`, `{name}`, `{http_port}`, `{https_port}`, `{http_port_suffix}`, `{https_port_suffix}`, `{route.<name>.host}`, `{route.<name>.url}`.
 - `compose_service + port` resolves to `http://<project>-<service>-1:<port>`.
 - `service.url` supports direct HTTP targets outside compose.
+- Set `DEBUG_INGRESSCTL=1` to print command execution traces for troubleshooting.
 
 ## Tests
 

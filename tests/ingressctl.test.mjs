@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 import {
   sanitize,
@@ -12,6 +13,7 @@ import {
   renderManifestEnv,
   buildRouteConfigYaml,
   composeArgs,
+  capture,
 } from "../bin/ingressctl-lib.mjs";
 
 test("sanitize normalizes strings into kebab-case", () => {
@@ -198,4 +200,26 @@ test("resolveManifest supports slug from manifest when not auto", async () => {
     process.chdir(oldCwd);
     await fsp.rm(tmp, { recursive: true, force: true });
   }
+});
+
+
+test("capture returns empty string when command spawn fails", () => {
+  const out = capture("definitely-not-a-real-command", ["arg"]);
+  assert.equal(out, "");
+});
+
+test("run exits non-zero with explicit message when command spawn fails", () => {
+  const script = `import { run } from "./bin/ingressctl-lib.mjs"; run("definitely-not-a-real-command", ["arg"]);`;
+  const res = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", script],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+
+  assert.notEqual(res.status, 0);
+  assert.match(res.stderr, /Failed to run command: definitely-not-a-real-command arg/);
 });

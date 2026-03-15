@@ -7,27 +7,46 @@ export const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)
 export const DYNAMIC_DIR = path.join(ROOT_DIR, 'infra', 'traefik', 'dynamic');
 export const STATE_DIR = path.join(ROOT_DIR, '.ingressctl', 'stacks');
 
+// Set DEBUG_INGRESSCTL=1 to print command execution traces.
+function debug(...args) {
+  if (process.env.DEBUG_INGRESSCTL === '1') {
+    console.log('[ingressctl:debug]', ...args);
+  }
+}
+
 export function fail(msg) {
   console.error(msg);
   process.exit(1);
 }
 
 export function run(cmd, args, opts = {}) {
+  debug('run', cmd, args.join(' '), 'cwd=', opts.cwd ?? ROOT_DIR);
   const res = spawnSync(cmd, args, {
     stdio: 'inherit',
     cwd: opts.cwd ?? ROOT_DIR,
     env: { ...process.env, ...(opts.env ?? {}) },
   });
+  if (res.error) {
+    console.error(`Failed to run command: ${cmd} ${args.join(' ')}`);
+    console.error(res.error.message);
+    process.exit(1);
+  }
   if ((res.status ?? 1) !== 0) process.exit(res.status ?? 1);
 }
 
 export function capture(cmd, args, opts = {}) {
+  debug('capture', cmd, args.join(' '), 'cwd=', opts.cwd ?? ROOT_DIR);
   const res = spawnSync(cmd, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     cwd: opts.cwd ?? ROOT_DIR,
     env: { ...process.env, ...(opts.env ?? {}) },
     encoding: 'utf8',
   });
+  if (res.error) {
+    console.error(`Failed to run command: ${cmd} ${args.join(' ')}`);
+    console.error(res.error.message);
+    return '';
+  }
   if ((res.status ?? 1) !== 0) return '';
   return res.stdout.trim();
 }
@@ -253,7 +272,9 @@ export function cmdIngress(action) {
     if (!fs.existsSync(dashboard)) {
       fs.writeFileSync(dashboard, "http:\n  routers:\n    traefik-dashboard:\n      rule: 'Host(`traefik.localhost`)'\n      entryPoints:\n        - web\n      service: api@internal\n", 'utf8');
     }
-    run('bash', ['-lc', 'docker network inspect dev-ingress >/dev/null 2>&1 || docker network create dev-ingress >/dev/null'], { env });
+    if (!capture('docker', ['network', 'inspect', 'dev-ingress'], { env })) {
+      run('docker', ['network', 'create', 'dev-ingress'], { env });
+    }
     run('docker', ['compose', '-p', 'local-ingress', '-f', path.join(ROOT_DIR, 'infra/traefik/compose.yml'), 'up', '-d'], { env });
     const suffix = httpPort === '80' ? '' : `:${httpPort}`;
     console.log(`Ingress up: http://traefik.localhost${suffix}`);
