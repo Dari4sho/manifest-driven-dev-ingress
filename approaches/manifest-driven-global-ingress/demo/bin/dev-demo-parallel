@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CORE_DIR="$(cd "${DEMO_DIR}/.." && pwd)"
+MANIFEST="${DEMO_DIR}/manifests/demo-local.json"
+BASE="$(${DEMO_DIR}/bin/slug.sh)"
+A="${BASE}-a"
+B="${BASE}-b"
+cmd="${1:-up}"
+
+case "${cmd}" in
+  up)
+    "${CORE_DIR}/bin/ingressctl" stack up --manifest "${MANIFEST}" --slug "${A}"
+    "${CORE_DIR}/bin/ingressctl" stack up --manifest "${MANIFEST}" --slug "${B}"
+    ;;
+  down)
+    "${CORE_DIR}/bin/ingressctl" stack down --manifest "${MANIFEST}" --slug "${A}"
+    "${CORE_DIR}/bin/ingressctl" stack down --manifest "${MANIFEST}" --slug "${B}"
+    ;;
+  check)
+    for s in "${A}" "${B}"; do
+      echo "Checking ${s}"
+      curl -fsS -H "Host: api-${s}.localhost" http://127.0.0.1/ >/dev/null
+      curl -fsS -H "Host: app-${s}.localhost" http://127.0.0.1/ >/dev/null
+      echo "- API: ok (api-${s}.localhost)"
+      echo "- App: ok (app-${s}.localhost)"
+    done
+    ;;
+  *)
+    echo "Usage: $0 [up|down|check]"
+    exit 1
+    ;;
+esac
