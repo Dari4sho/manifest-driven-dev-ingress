@@ -1,0 +1,8 @@
+infra/traefik/.env
+stack/api/.env
+stack/frontend/.env
+node_modules/
+infra/traefik/dynamic/*.yml
+!infra/traefik/dynamic/dashboard.yml
+stack/api/node_modules/
+stack/frontend/node_modules/
