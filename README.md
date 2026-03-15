@@ -1,30 +1,74 @@
-# Dev Setup Isolation Experiment
+# Manifest-Driven Global Ingress
 
-This repo now contains three approaches side-by-side:
+This approach has two clearly separated layers:
 
-## 1) Current Self-Contained Setup
+- Core ingress tooling at this level (`bin/ingressctl`, `infra/traefik`, `.ingressctl`).
+- Optional demo under `demo/` (dummy stack + sample manifest + helper scripts).
+- `bin/ingressctl` is a thin CLI wrapper; implementation lives in `bin/ingressctl-lib.mjs`.
 
-Path: `approaches/current-self-contained`
+## Core only
 
-- Starts Traefik and stacks from the same workflow scripts.
-- Good for single-directory demo convenience.
+Commands:
 
-## 2) Global Shared Ingress Setup
+- `./bin/ingressctl ingress up|down|status`
+- `./bin/ingressctl stack up --manifest <path> [--slug <slug>]`
+- `./bin/ingressctl stack down --manifest <path> [--slug <slug>]`
+- `./bin/ingressctl stack ls`
 
-Path: `approaches/global-shared-ingress`
+Core manifest model (JSON):
 
-- Global Traefik lifecycle is separate from stack lifecycle.
-- Start ingress once (`bin/ingress-up`), then register any number of stacks/workspaces independently (`bin/dev-up`).
-- Matches the architecture for real multi-project parallel development.
+```json
+{
+  "name": "billing",
+  "slug": "auto",
+  "compose": {
+    "workdir": "/abs/or/relative/path/to/project",
+    "files": ["compose.yml", "compose.dev.yml"],
+    "project_name_template": "{slug}"
+  },
+  "env": {
+    "APP_BASE_URL": "http://{route.web.host}{http_port_suffix}",
+    "API_BASE_URL": "http://{route.api.host}{http_port_suffix}"
+  },
+  "routes": [
+    {
+      "name": "web",
+      "host": "app-{slug}.localhost",
+      "service": { "compose_service": "frontend", "port": 5173 }
+    },
+    {
+      "name": "api",
+      "host": "api-{slug}.localhost",
+      "service": { "compose_service": "api", "port": 8080 }
+    },
+    {
+      "name": "admin",
+      "host": "admin-{slug}.localhost",
+      "service": { "url": "http://some-other-host:9000" }
+    }
+  ]
+}
+```
 
-## 3) Manifest-Driven Global Ingress Setup
+Notes:
 
-Path: `approaches/manifest-driven-global-ingress`
+- `{slug}` and `{project}` placeholders are supported.
+- `env` is optional and lets you inject manifest-derived values into compose env.
+- `env` supports `{slug}`, `{project}`, `{name}`, `{http_port}`, `{https_port}`, `{http_port_suffix}`, `{https_port_suffix}`, `{route.<name>.host}`, `{route.<name>.url}`.
+- `compose_service + port` resolves to `http://<project>-<service>-1:<port>`.
+- `service.url` supports direct HTTP targets outside compose.
 
-- Keeps one global ingress instance.
-- Registers stacks through manifest files (JSON), not fixed repo structure assumptions.
-- Supports multiple HTTP routes/services per stack and manifests located anywhere.
+## Tests
 
-## Recommended Next Step
+Run from this directory:
 
-Use `approaches/manifest-driven-global-ingress` for your intended pattern.
+```bash
+npm test
+# or
+make test
+```
+
+## Demo
+
+Demo files are intentionally isolated under [demo/](./demo).
+See [demo/README.md](./demo/README.md) for commands and expected URLs.

@@ -1,0 +1,25 @@
+name: local-ingress
+
+services:
+  traefik:
+    image: traefik:v3.3
+    command:
+      - --api=true
+      - --api.dashboard=true
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./dynamic:/etc/traefik/dynamic:ro
+    networks:
+      - dev-ingress
+    restart: unless-stopped
+
+networks:
+  dev-ingress:
+    external: true
+    name: dev-ingress
