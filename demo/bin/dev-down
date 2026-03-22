@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CORE_DIR="$(cd "${DEMO_DIR}/.." && pwd)"
-exec "${CORE_DIR}/bin/ingressctl" stack down --manifest "${DEMO_DIR}/manifests/demo-local.json" "$@"

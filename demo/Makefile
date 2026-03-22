@@ -1,19 +1,19 @@
 .PHONY: up down demo-up demo-down demo-check slug
 
 up:
-	./bin/dev-up
+	../bin/ingressctl stack up --manifest ./project-local.json
 
 down:
-	./bin/dev-down
+	../bin/ingressctl stack down --manifest ./project-local.json
 
 demo-up:
-	./bin/dev-demo-parallel up
+	./scripts/dev-demo-parallel up
 
 demo-down:
-	./bin/dev-demo-parallel down
+	./scripts/dev-demo-parallel down
 
 demo-check:
-	./bin/dev-demo-parallel check
+	./scripts/dev-demo-parallel check
 
 slug:
-	./bin/slug.sh
+	../bin/ingressctl stack slug --manifest ./project-local.json

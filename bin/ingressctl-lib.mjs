@@ -164,31 +164,42 @@ export function resolveManifest(manifestPath, slugOverride) {
 
   const manifestDir = path.dirname(abs);
   const name = sanitize(m.name ?? path.basename(abs, '.json'));
-  const workdir = path.resolve(manifestDir, m.compose?.workdir ?? '.');
+  const stack = m.stack && typeof m.stack === 'object' ? m.stack : m;
+  const compose = stack.compose && typeof stack.compose === 'object' ? stack.compose : {};
+  const workdir = path.resolve(manifestDir, compose.workdir ?? '.');
   // Slug can be explicitly passed, fixed in manifest, or auto-derived from repo/worktree.
-  const slug = slugOverride || (m.slug && m.slug !== 'auto' ? sanitize(m.slug) : deriveSlug(workdir));
-  const projectTemplate = m.compose?.project_name_template ?? '{slug}';
+  const fixedSlug = stack.slug ?? m.slug;
+  const slug = slugOverride || (fixedSlug && fixedSlug !== 'auto' ? sanitize(fixedSlug) : deriveSlug(workdir));
+  const projectTemplate = compose.project_name_template ?? '{slug}';
   // Compose project controls network/container names and can differ from slug.
   const project = sanitize(tpl(projectTemplate, { slug, project: slug, name }));
 
-  const files = (m.compose?.files ?? ['compose.yml']).map((f) => path.resolve(workdir, f));
-  const envFiles = (m.compose?.env_files ?? []).map((f) => path.resolve(workdir, f));
+  const files = (compose.files ?? ['compose.yml']).map((f) => path.resolve(workdir, f));
+  const envFiles = (compose.env_files ?? []).map((f) => path.resolve(workdir, f));
 
-  if (!Array.isArray(m.routes) || m.routes.length === 0) fail('Manifest routes[] is required');
+  const serviceDefs = stack.services && typeof stack.services === 'object' ? stack.services : {};
+  const routesRaw = Array.isArray(stack.routes) ? stack.routes : [];
+  if (routesRaw.length === 0) fail('Manifest stack.routes[] is required');
 
-  const routes = m.routes.map((r, idx) => {
+  const routes = routesRaw.map((r, idx) => {
     const rname = sanitize(r.name ?? `route-${idx + 1}`);
     const host = tpl(r.host, { slug, project, name });
     if (!host) fail(`Route ${rname} missing host`);
 
+    const routeService = typeof r.service === 'string' ? serviceDefs[r.service] : r.service;
+    if (!routeService) {
+      if (typeof r.service === 'string') fail(`Route ${rname} references unknown stack.services key: ${r.service}`);
+      fail(`Route ${rname} missing service definition`);
+    }
+
     // Keep source compose service metadata for env templating and diagnostics.
-    const composeService = r.service?.compose_service ?? r.service?.name ?? '';
+    const composeService = routeService?.compose_service ?? routeService?.name ?? '';
     let url;
-    if (r.service?.type === 'url' || r.service?.url) {
-      url = tpl(r.service.url ?? r.service.url_template, { slug, project, name });
+    if (routeService?.type === 'url' || routeService?.url) {
+      url = tpl(routeService.url ?? routeService.url_template, { slug, project, name });
     } else {
       const svc = composeService;
-      const port = r.service?.port;
+      const port = routeService?.port;
       if (!svc || !port) fail(`Route ${rname} needs service.compose_service and service.port`);
       url = `http://${project}-${svc}-1:${port}`;
     }
@@ -202,7 +213,7 @@ export function resolveManifest(manifestPath, slugOverride) {
     };
   });
 
-  const envTemplates = m.env && typeof m.env === 'object' ? m.env : {};
+  const envTemplates = stack.env && typeof stack.env === 'object' ? stack.env : {};
   return { manifestPath: abs, name, workdir, slug, project, files, envFiles, routes, envTemplates };
 }
 
@@ -302,6 +313,68 @@ export function cmdIngress(action) {
   fail('Usage: ingressctl ingress up|down|status');
 }
 
+function parseSlugArg(args) {
+  return args.slug || process.env.INGRESS_STACK_SLUG || '';
+}
+
+function buildStackComposeContext(manifest, slugOverride) {
+  const cfg = resolveManifest(manifest, slugOverride || undefined);
+  const httpPort = process.env.TRAEFIK_HTTP_PORT ?? '80';
+  const httpsPort = process.env.TRAEFIK_HTTPS_PORT ?? '443';
+  const env = {
+    COMPOSE_PROJECT_NAME: cfg.project,
+    TRAEFIK_HTTP_PORT: httpPort,
+    TRAEFIK_HTTPS_PORT: httpsPort,
+  };
+  const manifestEnv = renderManifestEnv(cfg, { httpPort, httpsPort });
+  for (const [k, v] of Object.entries(manifestEnv)) {
+    if (!(k in process.env)) env[k] = v;
+  }
+  for (const ef of cfg.envFiles) loadEnvFile(ef);
+  const cargs = ['compose', ...composeArgs(cfg.files)];
+  const raw = JSON.parse(fs.readFileSync(cfg.manifestPath, 'utf8'));
+  const stack = raw.stack && typeof raw.stack === 'object' ? raw.stack : raw;
+  const stackActions = stack.actions && typeof stack.actions === 'object' ? stack.actions : {};
+  return { cfg, env, cargs, stackActions };
+}
+
+function parseBool(raw, fallback = false) {
+  if (raw == null || raw === '') return fallback;
+  const v = String(raw).toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(v);
+}
+
+function parseActionNode(stackActions, actionName) {
+  const node = stackActions?.[actionName];
+  if (!node || typeof node !== 'object') return { service: '', command: '' };
+  return {
+    service: node.service != null ? String(node.service) : '',
+    command: node.command != null ? String(node.command) : '',
+  };
+}
+
+function parseActionService(actionName, args, actionNode) {
+  const argName = `${actionName}-service`;
+  const envName = `INGRESS_${actionName.toUpperCase()}_SERVICE`;
+  return String(args[argName] ?? process.env[envName] ?? actionNode.service ?? '').trim();
+}
+
+function sleepMs(ms) {
+  const secs = Math.max(0, Math.ceil(ms / 1000));
+  if (secs === 0) return;
+  spawnSync('bash', ['-lc', `sleep ${secs}`], { stdio: 'ignore' });
+}
+
+function waitForComposeServiceRunning(cargs, service, cfg, env, timeoutMs = 30000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const out = capture('docker', [...cargs, 'ps', '--status', 'running', '--services', service], { cwd: cfg.workdir, env });
+    if (out.split(/\r?\n/).map((s) => s.trim()).includes(service)) return true;
+    sleepMs(1000);
+  }
+  return false;
+}
+
 export function cmdStack(action, args) {
   const manifest = args.manifest;
   if (!manifest && action !== 'ls') fail('Missing --manifest <path>');
@@ -323,41 +396,45 @@ export function cmdStack(action, args) {
     return;
   }
 
-  const cfg = resolveManifest(manifest, args.slug);
+  const slugOverride = parseSlugArg(args);
+  const rest = args._.slice(2);
+  const { cfg, env, cargs, stackActions } = buildStackComposeContext(manifest, slugOverride);
   const httpPort = process.env.TRAEFIK_HTTP_PORT ?? '80';
-  const httpsPort = process.env.TRAEFIK_HTTPS_PORT ?? '443';
   const suffix = httpPort === '80' ? '' : `:${httpPort}`;
 
-  // Core env passed to compose; project-specific env is merged from manifest.env below.
-  const env = {
-    COMPOSE_PROJECT_NAME: cfg.project,
-    TRAEFIK_HTTP_PORT: httpPort,
-    TRAEFIK_HTTPS_PORT: httpsPort,
-  };
-  // Manifest-provided env is only applied when not explicitly set by caller env.
-  const manifestEnv = renderManifestEnv(cfg, { httpPort, httpsPort });
-  for (const [k, v] of Object.entries(manifestEnv)) {
-    if (!(k in process.env)) env[k] = v;
+  if (action === 'slug') {
+    console.log(cfg.slug);
+    return;
   }
 
-  for (const ef of cfg.envFiles) loadEnvFile(ef);
-
-  const cargs = ['compose', ...composeArgs(cfg.files)];
-
   if (action === 'up') {
-    if (!capture('docker', ['network', 'inspect', 'dev-ingress'])) fail("Global ingress network missing. Run 'ingressctl ingress up' first.");
+    cmdIngress('up');
     run('docker', [...cargs, 'up', '-d', '--build'], { cwd: cfg.workdir, env });
-    // Register stack routes in Traefik after compose services are up.
     const routeFile = writeRouteFile(cfg);
     writeState(cfg, routeFile);
     console.log(`Stack up: ${cfg.project}`);
     for (const r of cfg.routes) console.log(`- http://${r.host}${suffix}`);
+
+    const migrateAction = parseActionNode(stackActions, 'migrate');
+    const migrateService = parseActionService('migrate', args, migrateAction);
+    const autoMigrate = parseBool(args['auto-migrate'] ?? process.env.INGRESS_AUTO_MIGRATE, parseBool(stackActions?.up?.migrate?.enabled, false));
+    const skipMigrate = parseBool(args['skip-migrate'] ?? process.env.INGRESS_SKIP_MIGRATIONS, false);
+    const migrateCmd = migrateAction.command;
+    if (autoMigrate && !skipMigrate && migrateCmd) {
+      if (!migrateService) fail('Missing migrate service. Set stack.actions.migrate.service or --migrate-service <compose_service>.');
+      if (!waitForComposeServiceRunning(cargs, migrateService, cfg, env, 45000)) {
+        fail(`Timed out waiting for service '${migrateService}' to be running before migrations.`);
+      }
+      console.log(`Running migrate command for stack: ${cfg.project}`);
+      run('docker', [...cargs, 'exec', '-T', migrateService, 'bash', '-lc', String(migrateCmd)], { cwd: cfg.workdir, env });
+    } else if (skipMigrate) {
+      console.log('Skipping migrations (INGRESS_SKIP_MIGRATIONS=1 / --skip-migrate)');
+    }
     return;
   }
 
   if (action === 'down') {
     run('docker', [...cargs, 'down', '--remove-orphans'], { cwd: cfg.workdir, env });
-    // Remove dynamic route file so Traefik stops routing to this stack.
     const routeFile = path.join(DYNAMIC_DIR, `${cfg.project}.yml`);
     if (fs.existsSync(routeFile)) fs.unlinkSync(routeFile);
     removeState(cfg.project);
@@ -365,7 +442,34 @@ export function cmdStack(action, args) {
     return;
   }
 
-  fail('Usage: ingressctl stack up|down|ls');
+  if (action === 'logs') {
+    const service = rest[0];
+    if (!service) run('docker', [...cargs, 'logs', '-f'], { cwd: cfg.workdir, env });
+    else run('docker', [...cargs, 'logs', '-f', '--tail=200', service], { cwd: cfg.workdir, env });
+    return;
+  }
+
+  if (action === 'migrate') {
+    const migrateAction = parseActionNode(stackActions, 'migrate');
+    const migrateService = parseActionService('migrate', args, migrateAction);
+    const migrateCmd = migrateAction.command;
+    if (!migrateCmd) fail('Manifest stack.actions.migrate.command is not configured');
+    if (!migrateService) fail('Manifest stack.actions.migrate.service is not configured (or pass --migrate-service).');
+    run('docker', [...cargs, 'exec', '-T', migrateService, 'bash', '-lc', String(migrateCmd)], { cwd: cfg.workdir, env });
+    return;
+  }
+
+  if (action === 'seed') {
+    const seedAction = parseActionNode(stackActions, 'seed');
+    const seedService = parseActionService('seed', args, seedAction);
+    const seedCmd = seedAction.command;
+    if (!seedCmd) fail('Manifest stack.actions.seed.command is not configured');
+    if (!seedService) fail('Manifest stack.actions.seed.service is not configured (or pass --seed-service).');
+    run('docker', [...cargs, 'exec', '-T', seedService, 'bash', '-lc', String(seedCmd)], { cwd: cfg.workdir, env });
+    return;
+  }
+
+  fail('Usage: ingressctl stack up|down|logs [service]|migrate|seed|slug --manifest <file> [--slug <slug>] [--auto-migrate true|false] [--skip-migrate true|false]\n       ingressctl stack ls');
 }
 
 export function main(argv = process.argv.slice(2)) {
@@ -375,6 +479,6 @@ export function main(argv = process.argv.slice(2)) {
   if (scope === 'ingress') cmdIngress(action);
   else if (scope === 'stack') cmdStack(action, args);
   else {
-    fail(`Usage:\n  ingressctl ingress up|down|status\n  ingressctl stack up --manifest <file> [--slug <slug>]\n  ingressctl stack down --manifest <file> [--slug <slug>]\n  ingressctl stack ls`);
+    fail(`Usage:\n  ingressctl ingress up|down|status\n  ingressctl stack up|down|logs [service]|migrate|seed|slug --manifest <file> [--slug <slug>]\n  ingressctl stack ls`);
   }
 }

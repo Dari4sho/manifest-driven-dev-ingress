@@ -1,0 +1,37 @@
+{
+  "name": "project-local",
+  "stack": {
+    "slug": "auto",
+    "compose": {
+      "workdir": "./stack",
+      "files": ["compose.yml"],
+      "project_name_template": "{slug}"
+    },
+    "services": {
+      "app": {
+        "compose_service": "frontend",
+        "port": 3000
+      },
+      "api": {
+        "compose_service": "api",
+        "port": 8000
+      }
+    },
+    "env": {
+      "API_BASE_URL": "http://{route.api.host}{http_port_suffix}",
+      "VITE_API_BASE_URL": "http://{route.api.host}{http_port_suffix}"
+    },
+    "routes": [
+      {
+        "name": "app",
+        "host": "app-{slug}.localhost",
+        "service": "app"
+      },
+      {
+        "name": "api",
+        "host": "api-{slug}.localhost",
+        "service": "api"
+      }
+    ]
+  }
+}

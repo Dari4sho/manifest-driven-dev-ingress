@@ -2,8 +2,8 @@
 set -euo pipefail
 DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORE_DIR="$(cd "${DEMO_DIR}/.." && pwd)"
-MANIFEST="${DEMO_DIR}/manifests/demo-local.json"
-BASE="$(${DEMO_DIR}/bin/slug.sh)"
+MANIFEST="${DEMO_DIR}/project-local.json"
+BASE="$("${CORE_DIR}/bin/ingressctl" stack slug --manifest "${MANIFEST}")"
 A="${BASE}-a"
 B="${BASE}-b"
 cmd="${1:-up}"
