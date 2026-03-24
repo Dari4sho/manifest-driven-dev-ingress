@@ -6,7 +6,22 @@ MANIFEST="${DEMO_DIR}/project-local.json"
 BASE="$("${CORE_DIR}/bin/ingressctl" stack slug --manifest "${MANIFEST}")"
 A="${BASE}-a"
 B="${BASE}-b"
+DOMAIN="${INGRESS_DEMO_DOMAIN:-test}"
 cmd="${1:-up}"
+
+check_ready() {
+  local host="$1"
+  local url="$2"
+  local tries="${3:-30}"
+  local i
+  for ((i=1; i<=tries; i++)); do
+    if curl -fsS -H "Host: ${host}" "${url}" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
 
 case "${cmd}" in
   up)
@@ -20,10 +35,10 @@ case "${cmd}" in
   check)
     for s in "${A}" "${B}"; do
       echo "Checking ${s}"
-      curl -fsS -H "Host: api-${s}.localhost" http://127.0.0.1/ >/dev/null
-      curl -fsS -H "Host: app-${s}.localhost" http://127.0.0.1/ >/dev/null
-      echo "- API: ok (api-${s}.localhost)"
-      echo "- App: ok (app-${s}.localhost)"
+      check_ready "api.${s}.${DOMAIN}" "http://127.0.0.1/healthz"
+      check_ready "app.${s}.${DOMAIN}" "http://127.0.0.1/"
+      echo "- API: ok (api.${s}.${DOMAIN})"
+      echo "- App: ok (app.${s}.${DOMAIN})"
     done
     ;;
   *)

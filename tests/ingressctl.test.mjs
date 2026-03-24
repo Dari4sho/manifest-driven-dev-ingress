@@ -10,11 +10,16 @@ import {
   tpl,
   parseArgs,
   resolveManifest,
+  resolveDnsConfig,
+  buildDnsCorefile,
+  buildDnsHostsContent,
+  buildWindowsHostsSection,
+  replaceManagedSection,
   renderManifestEnv,
   buildRouteConfigYaml,
   composeArgs,
   capture,
-} from "../bin/ingressctl-lib.mjs";
+} from "../lib/ingressctl-lib.mjs";
 
 async function makeStackHarness() {
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "ingressctl-project-test-"));
@@ -240,6 +245,104 @@ test("buildRouteConfigYaml emits expected router/service blocks", () => {
 
 test("composeArgs expands compose file list", () => {
   assert.deepEqual(composeArgs(["a.yml", "b.yml"]), ["-f", "a.yml", "-f", "b.yml"]);
+});
+
+test("resolveDnsConfig applies defaults", () => {
+  const cfg = resolveDnsConfig({});
+  assert.equal(cfg.domain, "ingress.test");
+  assert.equal(cfg.bindIp, "127.0.0.1");
+  assert.equal(cfg.port, 53);
+  assert.equal(cfg.upstream, "1.1.1.1 8.8.8.8");
+});
+
+test("resolveDnsConfig parses overrides", () => {
+  const cfg = resolveDnsConfig({
+    domain: "dev.local",
+    "bind-ip": "0.0.0.0",
+    port: "1053",
+  });
+  assert.equal(cfg.domain, "dev.local");
+  assert.equal(cfg.bindIp, "0.0.0.0");
+  assert.equal(cfg.port, 1053);
+});
+
+test("buildDnsCorefile renders wildcard templates for domain", () => {
+  const corefile = buildDnsCorefile("dev.local", "9.9.9.9");
+  assert.match(corefile, /^dev\.local:53/m);
+  assert.match(corefile, /^.:53/m);
+  assert.match(corefile, /hosts \/etc\/coredns\/hosts/);
+  assert.match(corefile, /forward \. 9\.9\.9\.9/);
+  assert.match(corefile, /template IN A/);
+  assert.match(corefile, /127\.0\.0\.1/);
+  assert.match(corefile, /template IN AAAA/);
+  assert.match(corefile, /::1/);
+});
+
+test("buildDnsHostsContent renders deduped hosts entries", () => {
+  const content = buildDnsHostsContent([
+    "api-howtio.test",
+    "app-howtio.test",
+    "api-howtio.test",
+    "bad host",
+  ]);
+  assert.match(content, /^127\.0\.0\.1 /m);
+  assert.match(content, /^::1 /m);
+  assert.match(content, /api-howtio\.test/);
+  assert.match(content, /app-howtio\.test/);
+  assert.doesNotMatch(content, /bad host/);
+});
+
+test("buildWindowsHostsSection emits managed block", () => {
+  const section = buildWindowsHostsSection(["app.demo.test", "api.demo.test", "app.demo.test"]);
+  assert.match(section, /IngressctlHostsSectionStart/);
+  assert.match(section, /Managed by ingressctl/);
+  assert.match(section, /127\.0\.0\.1 app\.demo\.test/);
+  assert.match(section, /127\.0\.0\.1 api\.demo\.test/);
+  assert.match(section, /IngressctlHostsSectionEnd/);
+});
+
+test("replaceManagedSection appends when missing and replaces when present", () => {
+  const base = "# sample\n127.0.0.1 localhost\n";
+  const s1 = buildWindowsHostsSection(["app.one.test"]);
+  const withManaged = replaceManagedSection(base, s1);
+  assert.match(withManaged, /app\.one\.test/);
+
+  const s2 = buildWindowsHostsSection(["app.two.test"]);
+  const replaced = replaceManagedSection(withManaged, s2);
+  assert.match(replaced, /app\.two\.test/);
+  assert.doesNotMatch(replaced, /app\.one\.test/);
+});
+
+test("resolveManifest supports {domain} placeholder from stack.domain", async () => {
+  const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "ingressctl-test-domain-"));
+  const manifestPath = path.join(tmp, "m.json");
+  const stackDir = path.join(tmp, "stack");
+  await fsp.mkdir(stackDir, { recursive: true });
+  await fsp.writeFile(path.join(stackDir, "compose.yml"), "services: {}\n", "utf8");
+  await fsp.writeFile(
+    manifestPath,
+    JSON.stringify({
+      name: "demo",
+      stack: {
+        slug: "demo",
+        domain: "ingress.test",
+        compose: { workdir: "./stack", files: ["compose.yml"] },
+        routes: [{ host: "app-{slug}.{domain}", service: { compose_service: "web", port: 5173 } }],
+      },
+    }),
+    "utf8",
+  );
+
+  const oldCwd = process.cwd();
+  process.chdir(tmp);
+  try {
+    const cfg = resolveManifest(manifestPath);
+    assert.equal(cfg.domain, "ingress.test");
+    assert.equal(cfg.routes[0].host, "app-demo.ingress.test");
+  } finally {
+    process.chdir(oldCwd);
+    await fsp.rm(tmp, { recursive: true, force: true });
+  }
 });
 
 test("resolveManifest supports slug from manifest when not auto", async () => {

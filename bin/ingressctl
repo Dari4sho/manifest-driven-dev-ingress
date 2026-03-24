@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { main } from './ingressctl-lib.mjs';
+import { main } from '../lib/ingressctl-lib.mjs';
 
 main();

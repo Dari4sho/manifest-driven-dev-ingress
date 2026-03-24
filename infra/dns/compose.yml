@@ -1,0 +1,13 @@
+name: local-ingress-dns
+
+services:
+  coredns:
+    image: coredns/coredns:1.12.1
+    command: -conf /etc/coredns/Corefile
+    ports:
+      - "${INGRESS_DNS_BIND_IP:-127.0.0.1}:${INGRESS_DNS_PORT:-53}:53/udp"
+      - "${INGRESS_DNS_BIND_IP:-127.0.0.1}:${INGRESS_DNS_PORT:-53}:53/tcp"
+    volumes:
+      - ./Corefile:/etc/coredns/Corefile:ro
+      - ./hosts:/etc/coredns/hosts:ro
+    restart: unless-stopped

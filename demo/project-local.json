@@ -2,6 +2,7 @@
   "name": "project-local",
   "stack": {
     "slug": "auto",
+    "domain": "test",
     "compose": {
       "workdir": "./stack",
       "files": ["compose.yml"],
@@ -24,12 +25,12 @@
     "routes": [
       {
         "name": "app",
-        "host": "app-{slug}.localhost",
+        "host": "app.{slug}.{domain}",
         "service": "app"
       },
       {
         "name": "api",
-        "host": "api-{slug}.localhost",
+        "host": "api.{slug}.{domain}",
         "service": "api"
       }
     ]

@@ -7,6 +7,7 @@ Use this as the single source of truth for agent tasks when onboarding another r
 ## Target Model
 
 - One shared global ingress runtime (`ingressctl ingress up`) on ports `80/443`.
+- Optional shared DNS runtime (`ingressctl dns up`) for wildcard host resolution across browser + Node + CLI.
 - Each project defines a local manifest (`project-local.json`) with:
   - `stack.compose`
   - `stack.services`
@@ -14,7 +15,10 @@ Use this as the single source of truth for agent tasks when onboarding another r
   - optional `stack.env`
   - optional `stack.actions` (`up.migrate.enabled`, `migrate`, `seed`)
 - Project scripts call global `ingressctl` with local manifest.
-- Default local URLs use slug hosts: `http://<service>-<slug>.localhost`.
+- Default local URLs can use slug hosts:
+  - `http://<service>-<slug>.localhost` (browser-first, no DNS setup)
+  - `http://<service>-<slug>.ingress.test` (recommended when using wildcard DNS)
+  - or project-scoped hosts like `http://app.<project>.test` / `http://api.<project>.test`
 
 ## Global Prerequisites
 
@@ -22,7 +26,10 @@ Use this as the single source of truth for agent tasks when onboarding another r
 2. Ensure Docker is running.
 3. Start ingress once:
    - `./bin/ingressctl ingress up` or `make ingress-up`
-4. Confirm:
+4. Optional but recommended for non-browser tooling:
+   - `./bin/ingressctl dns up`
+   - configure OS resolver for `*.ingress.test` -> `127.0.0.1`
+5. Confirm:
    - `./bin/ingressctl ingress status` or `make ingress-status`
    - open `http://traefik.localhost`
 
@@ -43,6 +50,7 @@ Do not vendor global ingress core into project repos.
   "name": "project-local",
   "stack": {
     "slug": "auto",
+    "domain": "ingress.test",
     "compose": {
       "workdir": ".",
       "files": ["compose.yml"],
@@ -57,8 +65,8 @@ Do not vendor global ingress core into project repos.
       "API_BASE_URL": "http://{route.api.host}{http_port_suffix}"
     },
     "routes": [
-      { "name": "app", "host": "app-{slug}.localhost", "service": "app" },
-      { "name": "api", "host": "api-{slug}.localhost", "service": "api" }
+      { "name": "app", "host": "app-{slug}.{domain}", "service": "app" },
+      { "name": "api", "host": "api-{slug}.{domain}", "service": "api" }
     ],
     "actions": {
       "up": {
@@ -163,6 +171,7 @@ Parallel slug check:
 3. Auto-migrate race if service not yet running.
 4. tmux shell differences (`bash -lc` behavior can differ); prefer `sh -c` for simple wait loops.
 5. Fixed absolute ingress binary path not valid on another machine.
+6. `*.localhost` may not resolve in Node.js/CLI on some systems; use wildcard DNS (`*.ingress.test`) for full-machine parity.
 
 ## Minimal Agent Prompt
 

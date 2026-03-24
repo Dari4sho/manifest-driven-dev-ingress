@@ -1,4 +1,5 @@
 infra/traefik/.env
+infra/dns/.env
 demo/stack/api/.env
 demo/stack/frontend/.env
 node_modules/
@@ -7,3 +8,4 @@ infra/traefik/dynamic/*.yml
 .ingressctl/stacks/*.json
 demo/stack/api/node_modules/
 demo/stack/frontend/node_modules/
+.idea

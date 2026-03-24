@@ -1,0 +1,22 @@
+.:53 {
+  errors
+  log
+  hosts /etc/coredns/hosts {
+    ttl 60
+    reload 2s
+    fallthrough
+  }
+  forward . 1.1.1.1 8.8.8.8
+  cache 30
+}
+
+ingress.test:53 {
+  errors
+  log
+  template IN A {
+    answer "{{ .Name }} 60 IN A 127.0.0.1"
+  }
+  template IN AAAA {
+    answer "{{ .Name }} 60 IN AAAA ::1"
+  }
+}
