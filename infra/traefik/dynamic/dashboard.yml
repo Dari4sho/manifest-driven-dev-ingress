@@ -5,3 +5,9 @@ http:
       entryPoints:
         - web
       service: api@internal
+    traefik-dashboard-secure:
+      rule: 'Host(`traefik.localhost`)'
+      entryPoints:
+        - websecure
+      service: api@internal
+      tls: {}

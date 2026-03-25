@@ -9,6 +9,10 @@ cd /home/d4s/workspace/_dev/manifest-driven-dev-ingress
 ./bin/ingressctl dns up --domain ingress.test --port 53
 ./bin/ingressctl ingress up
 
+# 2b) Optional HTTPS bootstrap (run once, then refresh on host changes)
+./bin/ingressctl tls init
+./bin/ingressctl tls trust
+
 # 3) (WSL) prepend local DNS while preserving existing resolver entries
 # Do this after DNS is up so 127.0.0.1:53 can answer immediately.
 sudo ./platform/wsl/resolv-prepend-localdns.sh
@@ -23,7 +27,7 @@ make -C demo up
 ./platform/wsl/windows-hosts-sync.sh
 # or: make dns-win-sync
 
-# 6) Run demo readiness checks
+# 6) Run demo readiness checks (note: only for the parallel demo)
 ./demo/scripts/dev-demo-parallel check
 
 # 7) Resolve slug and print URLs
@@ -31,6 +35,8 @@ BASE="$(./bin/ingressctl stack slug --manifest ./demo/project-local.json)"
 echo "Base slug: $BASE"
 echo "http://app.${BASE}.test/"
 echo "http://api.${BASE}.test/"
+echo "https://app.${BASE}.test/"
+echo "https://api.${BASE}.test/"
 echo "http://app.${BASE}-a.test/"
 echo "http://api.${BASE}-a.test/"
 echo "http://app.${BASE}-b.test/"
@@ -55,3 +61,10 @@ make -C demo down
 ./platform/wsl/windows-hosts-clear.sh      # or: make dns-win-clear
 ./bin/ingressctl dns down --domain ingress.test --port 53
 ./bin/ingressctl ingress down
+
+# 11) Optional TLS cleanup
+# Keep TLS files/CA by default for convenience.
+# Use only when you explicitly want to reset local TLS state.
+./bin/ingressctl tls clean
+# or full teardown (also removes mkcert CA trust):
+./bin/ingressctl tls clean --uninstall-ca true

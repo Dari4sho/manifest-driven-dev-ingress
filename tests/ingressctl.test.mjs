@@ -238,8 +238,10 @@ test("buildRouteConfigYaml emits expected router/service blocks", () => {
   });
 
   assert.match(yaml, /api-proj-demo:/);
+  assert.match(yaml, /api-proj-demo-secure:/);
   assert.match(yaml, /Host\(`api-demo\.localhost`\)/);
   assert.match(yaml, /url: "http:\/\/proj-demo-api-1:8000"/);
+  assert.match(yaml, /tls: \{\}/);
   assert.match(yaml, /app-proj-demo:/);
 });
 
@@ -383,7 +385,7 @@ test("capture returns empty string when command spawn fails", () => {
 });
 
 test("run exits non-zero with explicit message when command spawn fails", () => {
-  const script = `import { run } from "./bin/ingressctl-lib.mjs"; run("definitely-not-a-real-command", ["arg"]);`;
+  const script = `import { run } from "./lib/ingressctl-lib.mjs"; run("definitely-not-a-real-command", ["arg"]);`;
   const res = spawnSync(
     process.execPath,
     ["--input-type=module", "-e", script],

@@ -15,6 +15,7 @@ services:
       - "${TRAEFIK_HTTPS_PORT:-443}:443"
     volumes:
       - ./dynamic:/etc/traefik/dynamic:ro
+      - ../../.ingressctl/tls:/etc/traefik/tls:ro
     networks:
       - dev-ingress
     restart: unless-stopped

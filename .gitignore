@@ -6,6 +6,7 @@ node_modules/
 infra/traefik/dynamic/*.yml
 !infra/traefik/dynamic/dashboard.yml
 .ingressctl/stacks/*.json
+.ingressctl/tls/
 demo/stack/api/node_modules/
 demo/stack/frontend/node_modules/
 .idea

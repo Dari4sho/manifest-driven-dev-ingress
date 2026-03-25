@@ -4,7 +4,7 @@ This approach has two clearly separated layers:
 
 - Core ingress tooling at this level (`bin/ingressctl`, `infra/traefik`, `.ingressctl`).
 - Optional demo under `demo/` (dummy stack + sample manifest + helper scripts).
-- `bin/ingressctl` is a thin CLI wrapper; implementation lives in `bin/ingressctl-lib.mjs`.
+- `bin/ingressctl` is a thin CLI wrapper; implementation lives in `lib/ingressctl-lib.mjs`.
 
 ## Core only
 
@@ -12,6 +12,7 @@ Commands:
 
 - `./bin/ingressctl ingress up|down|status [--with-dns true|false]`
 - `./bin/ingressctl dns up|down|status|doctor|windows-sync|windows-clear [--domain <domain>] [--bind-ip <ip>] [--port <port>] [--upstream "<dns...>"] [--windows-hosts-path <path>]`
+- `./bin/ingressctl tls init|refresh|trust|status|clean [--hosts "<host...>"] [--with-wildcard true|false] [--domain <domain>] [--trust-adapter <auto|off|wsl-windows>] [--trust-hook "<cmd>"] [--uninstall-ca true|false]`
 - `./bin/ingressctl stack up|down|logs [service]|migrate|seed|slug --manifest <path> [--slug <slug>]`
 - `./bin/ingressctl stack ls`
 
@@ -77,6 +78,12 @@ Notes:
   - `stack.actions.up.migrate.enabled=true` enables auto-migrate during `stack up`.
   - `--migrate-service` / `--seed-service` (or `INGRESS_MIGRATE_SERVICE` / `INGRESS_SEED_SERVICE`) override target services at runtime.
 - Set `DEBUG_INGRESSCTL=1` to print command execution traces for troubleshooting.
+- Optional TLS controls:
+  - `INGRESS_TLS_AUTO=0` (set `1` to refresh cert SANs automatically on `stack up/down`)
+  - `INGRESS_TLS_WILDCARD=1` (set `0` to skip wildcard SAN `*.${INGRESS_DNS_DOMAIN}`)
+  - `INGRESS_TLS_HOSTS="host1 host2"` (extra SANs)
+  - `INGRESS_TLS_TRUST_ADAPTER=auto` (`auto` uses detected platform adapter, `off` disables adapters, `wsl-windows` forces WSL Windows trust adapter)
+  - `INGRESS_TLS_TRUST_HOOK="<cmd>"` (optional platform hook; receives `INGRESS_TLS_ROOT_CA`)
 
 ## DNS Layer (Optional)
 
@@ -104,6 +111,14 @@ Important:
 - On WSL, you can also mirror registered hosts into Windows hosts file:
   - `./platform/wsl/windows-hosts-sync.sh`
   - `./platform/wsl/windows-hosts-clear.sh`
+- For local HTTPS without browser warnings:
+  - Install dependency once: `mkcert`
+  - `./bin/ingressctl tls init`
+  - `./bin/ingressctl tls trust`
+  - On WSL, `trust-adapter=auto` includes Windows trust via platform adapter.
+  - Cleanup options:
+    - `./bin/ingressctl tls clean` (remove repo-local TLS artifacts only)
+    - `./bin/ingressctl tls clean --uninstall-ca true` (also uninstall mkcert CA trust from local stores)
 - DNS container alone is not enough. Your OS resolver must route DNS lookups to local CoreDNS.
 - This is intentionally OS-specific. Keep resolver setup as a one-time local machine step.
 - On WSL, prefer `sudo ./platform/wsl/resolv-prepend-localdns.sh` to keep dynamic resolver entries and prepend local DNS.
@@ -127,5 +142,5 @@ See [demo/README.md](./demo/README.md) for commands and expected URLs.
 
 For onboarding another project repo, use:
 
-- [PROJECT_INTEGRATION_GUIDE.md](./PROJECT_INTEGRATION_GUIDE.md)
-- [DNS_SETUP.md](./DNS_SETUP.md)
+- [PROJECT_INTEGRATION_GUIDE.md](docs/PROJECT_INTEGRATION_GUIDE.md)
+- [DNS_SETUP.md](docs/DNS_SETUP.md)
